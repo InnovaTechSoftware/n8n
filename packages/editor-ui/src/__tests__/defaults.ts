@@ -135,6 +135,11 @@ export const defaultSettings: FrontendSettings = {
 		enabled: false,
 		credits: 0,
 	},
-	betaFeatures: [],
 	easyAIWorkflowOnboarded: false,
+	partialExecution: {
+		version: 1,
+	},
+	folders: {
+		enabled: false,
+	},
 };

@@ -19,6 +19,7 @@ import { useVersionsStore } from './versions.store';
 import { makeRestApiRequest } from '@/utils/apiUtils';
 import { useToast } from '@/composables/useToast';
 import { i18n } from '@/plugins/i18n';
+import { useLocalStorage } from '@vueuse/core';
 
 export const useSettingsStore = defineStore(STORES.SETTINGS, () => {
 	const initialized = ref(false);
@@ -42,6 +43,8 @@ export const useSettingsStore = defineStore(STORES.SETTINGS, () => {
 	const ldap = ref({ loginLabel: '', loginEnabled: false });
 	const saml = ref({ loginLabel: '', loginEnabled: false });
 	const mfa = ref({ enabled: false });
+	const folders = ref({ enabled: false });
+
 	const saveDataErrorExecution = ref<WorkflowSettings.SaveDataExecution>('all');
 	const saveDataSuccessExecution = ref<WorkflowSettings.SaveDataExecution>('all');
 	const saveManualExecutions = ref(false);
@@ -98,6 +101,23 @@ export const useSettingsStore = defineStore(STORES.SETTINGS, () => {
 
 	const isCloudDeployment = computed(() => settings.value.deployment?.type === 'cloud');
 
+	const partialExecutionVersion = computed(() => {
+		const defaultVersion = settings.value.partialExecution?.version ?? 1;
+		// -1 means we pick the defaultVersion
+		//  1 is the old flow
+		//  2 is the new flow
+		const userVersion = useLocalStorage('PartialExecution.version', -1).value;
+		const version = userVersion === -1 ? defaultVersion : userVersion;
+
+		// For backwards compatibility, e.g. if the user has 0 in their local
+		// storage, which used to be allowed, but not anymore.
+		if (![1, 2].includes(version)) {
+			return 1;
+		}
+
+		return version;
+	});
+
 	const isAiCreditsEnabled = computed(() => settings.value.aiCredits?.enabled);
 
 	const aiCreditsQuota = computed(() => settings.value.aiCredits?.credits);
@@ -117,6 +137,8 @@ export const useSettingsStore = defineStore(STORES.SETTINGS, () => {
 	);
 
 	const isMfaFeatureEnabled = computed(() => mfa.value.enabled);
+
+	const isFoldersFeatureEnabled = computed(() => folders.value.enabled);
 
 	const areTagsEnabled = computed(() =>
 		settings.value.workflowTagsDisabled !== undefined ? !settings.value.workflowTagsDisabled : true,
@@ -162,10 +184,6 @@ export const useSettingsStore = defineStore(STORES.SETTINGS, () => {
 
 	const isDevRelease = computed(() => settings.value.releaseChannel === 'dev');
 
-	const isCanvasV2Enabled = computed(() =>
-		(settings.value.betaFeatures ?? []).includes('canvas_v2'),
-	);
-
 	const setSettings = (newSettings: FrontendSettings) => {
 		settings.value = newSettings;
 		userManagement.value = newSettings.userManagement;
@@ -184,6 +202,7 @@ export const useSettingsStore = defineStore(STORES.SETTINGS, () => {
 		}
 
 		mfa.value.enabled = settings.value.mfa?.enabled;
+		folders.value.enabled = settings.value.folders?.enabled;
 
 		if (settings.value.enterprise?.showNonProdBanner) {
 			useUIStore().pushBannerToStack('NON_PRODUCTION_LICENSE');
@@ -392,6 +411,7 @@ export const useSettingsStore = defineStore(STORES.SETTINGS, () => {
 		logLevel,
 		isTelemetryEnabled,
 		isMfaFeatureEnabled,
+		isFoldersFeatureEnabled,
 		isAiAssistantEnabled,
 		areTagsEnabled,
 		isHiringBannerEnabled,
@@ -413,7 +433,6 @@ export const useSettingsStore = defineStore(STORES.SETTINGS, () => {
 		saveDataProgressExecution,
 		isCommunityPlan,
 		isAskAiEnabled,
-		isCanvasV2Enabled,
 		isAiCreditsEnabled,
 		aiCreditsQuota,
 		reset,
@@ -430,5 +449,6 @@ export const useSettingsStore = defineStore(STORES.SETTINGS, () => {
 		getSettings,
 		setSettings,
 		initialize,
+		partialExecutionVersion,
 	};
 });
