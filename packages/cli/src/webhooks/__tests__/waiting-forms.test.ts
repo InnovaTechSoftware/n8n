@@ -1,16 +1,21 @@
+import type { IExecutionResponse, ExecutionRepository } from '@n8n/db';
 import type express from 'express';
 import { mock } from 'jest-mock-extended';
-import { FORM_NODE_TYPE, type Workflow } from 'n8n-workflow';
+import { FORM_NODE_TYPE, WAITING_FORMS_EXECUTION_STATUS, type Workflow } from 'n8n-workflow';
 
-import type { ExecutionRepository } from '@/databases/repositories/execution.repository';
+import type { WaitingWebhookRequest } from '../webhook.types';
+
 import { WaitingForms } from '@/webhooks/waiting-forms';
 
-import type { IExecutionResponse } from '../../interfaces';
-import type { WaitingWebhookRequest } from '../webhook.types';
+class TestWaitingForms extends WaitingForms {
+	exposeGetWorkflow(execution: IExecutionResponse): Workflow {
+		return this.getWorkflow(execution);
+	}
+}
 
 describe('WaitingForms', () => {
 	const executionRepository = mock<ExecutionRepository>();
-	const waitingForms = new WaitingForms(mock(), mock(), executionRepository, mock());
+	const waitingForms = new TestWaitingForms(mock(), mock(), executionRepository, mock(), mock());
 
 	beforeEach(() => {
 		jest.restoreAllMocks();
@@ -200,25 +205,114 @@ describe('WaitingForms', () => {
 			expect(result).toBe('Form2');
 		});
 
-		it('should mark as test form webhook when execution mode is manual', async () => {
-			jest
-				// @ts-expect-error Protected method
-				.spyOn(waitingForms, 'getWebhookExecutionData')
-				// @ts-expect-error Protected method
-				.mockResolvedValue(mock<IWebhookResponseCallbackData>());
-
+		it('should return status of execution if suffix is WAITING_FORMS_EXECUTION_STATUS', async () => {
 			const execution = mock<IExecutionResponse>({
-				finished: false,
-				mode: 'manual',
-				data: {
-					resultData: { lastNodeExecuted: 'someNode', error: undefined },
-				},
+				status: 'success',
 			});
 			executionRepository.findSingleExecution.mockResolvedValue(execution);
 
-			await waitingForms.executeWebhook(mock<WaitingWebhookRequest>(), mock<express.Response>());
+			const req = mock<WaitingWebhookRequest>({
+				headers: {},
+				params: {
+					path: '123',
+					suffix: WAITING_FORMS_EXECUTION_STATUS,
+				},
+			});
 
-			expect(execution.data.isTestWebhook).toBe(true);
+			const res = mock<express.Response>();
+
+			const result = await waitingForms.executeWebhook(req, res);
+
+			expect(result).toEqual({ noWebhookResponse: true });
+			expect(res.send).toHaveBeenCalledWith(execution.status);
+		});
+
+		it('should handle old executions with missing activeVersionId field when active=true', () => {
+			const execution = mock<IExecutionResponse>({
+				workflowData: {
+					id: 'workflow1',
+					name: 'Test Workflow',
+					nodes: [],
+					connections: {},
+					active: true,
+					activeVersionId: undefined, // Must be explicitly set to undefined; jest-mock-extended returns a truthy mock if omitted
+					settings: {},
+					staticData: {},
+					isArchived: false,
+					createdAt: new Date(),
+					updatedAt: new Date(),
+				},
+			});
+
+			const workflow = waitingForms.exposeGetWorkflow(execution);
+
+			expect(workflow.active).toBe(true);
+		});
+
+		it('should handle old executions with missing activeVersionId field when active=false', () => {
+			const execution = mock<IExecutionResponse>({
+				workflowData: {
+					id: 'workflow1',
+					name: 'Test Workflow',
+					nodes: [],
+					connections: {},
+					active: false,
+					activeVersionId: undefined, // Must be explicitly set to undefined; jest-mock-extended returns a truthy mock if omitted
+					settings: {},
+					staticData: {},
+					isArchived: false,
+					createdAt: new Date(),
+					updatedAt: new Date(),
+				},
+			});
+
+			const workflow = waitingForms.exposeGetWorkflow(execution);
+
+			expect(workflow.active).toBe(false);
+		});
+
+		it('should set active to true when activeVersionId exists', () => {
+			const execution = mock<IExecutionResponse>({
+				workflowData: {
+					id: 'workflow1',
+					name: 'Test Workflow',
+					nodes: [],
+					connections: {},
+					active: undefined, // Must be explicitly set to undefined; jest-mock-extended returns a truthy mock if omitted
+					activeVersionId: 'version-123',
+					settings: {},
+					staticData: {},
+					isArchived: false,
+					createdAt: new Date(),
+					updatedAt: new Date(),
+				},
+			});
+
+			const workflow = waitingForms.exposeGetWorkflow(execution);
+
+			expect(workflow.active).toBe(true);
+		});
+
+		it('should set active to false when activeVersionId is null', () => {
+			const execution = mock<IExecutionResponse>({
+				workflowData: {
+					id: 'workflow1',
+					name: 'Test Workflow',
+					nodes: [],
+					connections: {},
+					active: undefined, // Must be explicitly set to undefined; jest-mock-extended returns a truthy mock if omitted
+					activeVersionId: null,
+					settings: {},
+					staticData: {},
+					isArchived: false,
+					createdAt: new Date(),
+					updatedAt: new Date(),
+				},
+			});
+
+			const workflow = waitingForms.exposeGetWorkflow(execution);
+
+			expect(workflow.active).toBe(false);
 		});
 	});
 });
